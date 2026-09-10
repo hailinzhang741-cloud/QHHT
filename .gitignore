@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+tmp_out.txt
+run_output.txt
+
+# 数据缓存（云端会重新拉取）
+data/**/*.csv
+data/logs/
+data/**/*.log
+
+# 保留模型阈值配置
+!data/results/
+!data/results/model_config.json
+!data/results/model_config_v5.json
