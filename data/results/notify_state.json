@@ -1,9 +1,9 @@
 {
   "as_of_date": "20260911",
-  "slot": "1415",
+  "slot": "1030",
   "pushed": true,
-  "source": "local",
-  "pushed_at": "2026-09-14T08:00:59Z",
+  "source": "cloud",
+  "pushed_at": "2026-09-14T08:01:34Z",
   "slots": {
     "20260911_0840": {
       "pushed": true,
@@ -19,6 +19,11 @@
       "pushed": true,
       "source": "local",
       "pushed_at": "2026-09-14T08:00:59Z"
+    },
+    "20260911_1030": {
+      "pushed": true,
+      "source": "cloud",
+      "pushed_at": "2026-09-14T08:01:34Z"
     }
   }
 }
