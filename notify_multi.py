@@ -10,7 +10,8 @@ from notify import (
     _send_email,
     daily_notify_enabled,
 )
-from notify_state import already_pushed, resolve_run_slot, save_state
+from notify_state import already_pushed, dedupe_run_date, resolve_run_slot, save_state
+from intraday_snapshot import IntradayBundle
 from trading_labels import format_1d_horizon_label, format_5d_horizon_label, format_push_header
 
 
@@ -39,6 +40,12 @@ def _format_oil_references(sig: dict) -> list[str]:
     ]
 
 
+def _intraday_lines(snap, unit: str) -> list[str]:
+    if snap is None:
+        return []
+    return [snap.format_line(unit=unit)]
+
+
 def _horizon_block(result, as_of_date: str) -> list[str]:
     label_1d, note_1d = format_1d_horizon_label(as_of_date)
     label_5d, note_5d = format_5d_horizon_label(as_of_date)
@@ -52,7 +59,12 @@ def _horizon_block(result, as_of_date: str) -> list[str]:
     return block
 
 
-def format_multi_content(cu_result, oil_result, slot: str) -> tuple[str, str]:
+def format_multi_content(
+    cu_result,
+    oil_result,
+    slot: str,
+    intraday: IntradayBundle | None = None,
+) -> tuple[str, str]:
     cu_sig = cu_result.signals
     oil_sig = oil_result.signals
     slot_label = f"{slot[:2]}:{slot[2:]}" if len(slot) == 4 else slot
@@ -60,23 +72,33 @@ def format_multi_content(cu_result, oil_result, slot: str) -> tuple[str, str]:
     title = (
         f"期货v5 {slot_label} | 铜1d{cu_result.prob_up_1d*100:.0f}% 油1d{oil_result.prob_up_1d*100:.0f}%"
     )
+    show_intraday = intraday is not None and (intraday.cu or intraday.oil)
     lines = [
         header,
-        "（每次推送均重新拉取最新数据）",
+        "（概率=纯v5日K模型；盘中现价仅供参考，不修正概率）",
         "",
-        f"沪铜 v5  数据截至 {cu_result.as_of_date}",
-        f"收盘 {cu_result.close:,.0f} 元/吨",
-        "",
+        f"沪铜 v5  日K截至 {cu_result.as_of_date}",
+        f"日K收盘 {cu_result.close:,.0f} 元/吨",
     ]
+    if show_intraday and intraday.cu:
+        lines.extend(_intraday_lines(intraday.cu, "元/吨"))
+    lines.append("")
     lines.extend(_horizon_block(cu_result, cu_result.as_of_date))
     lines.extend(["", "参考依据:"])
     lines.extend(_format_references(cu_sig))
     lines.extend([
         "",
-        f"原油 v5  数据截至 {oil_result.as_of_date}",
-        f"收盘 {oil_result.close:,.1f} 元/桶",
-        "",
+        f"原油 v5  日K截至 {oil_result.as_of_date}",
+        f"日K收盘 {oil_result.close:,.1f} 元/桶",
     ])
+    if intraday and intraday.oil:
+        lines.extend(_intraday_lines(intraday.oil, "元/桶"))
+    if intraday and intraday.wti:
+        lines.append(
+            f"WTI实时 {intraday.wti.last:.2f} USD  "
+            f"今开→现价 {intraday.wti.session_ret_open_pct:+.2f}%  ({intraday.wti.source})"
+        )
+    lines.append("")
     lines.extend(_horizon_block(oil_result, oil_result.as_of_date))
     lines.extend(["", "参考依据:"])
     lines.extend(_format_oil_references(oil_sig))
@@ -90,6 +112,7 @@ def notify_multi_if_signal(
     source: str = "local",
     check_dedupe: bool = True,
     slot: str | None = None,
+    intraday: IntradayBundle | None = None,
 ) -> bool:
     slot = slot or resolve_run_slot()
     daily = daily_notify_enabled()
@@ -98,12 +121,13 @@ def notify_multi_if_signal(
         print(f"[notify] 铜5日={cu_result.signal_5d} 油5日={oil_result.signal_5d}，跳过推送")
         return False
 
-    dedupe_key = f"{cu_result.as_of_date}_{slot}"
-    if check_dedupe and not force and already_pushed(cu_result.as_of_date, slot=slot):
+    run_date = dedupe_run_date()
+    dedupe_key = f"{run_date}_{slot}"
+    if check_dedupe and not force and already_pushed(cu_result.as_of_date, slot=slot, run_date=run_date):
         print(f"[notify] {dedupe_key} 已推送，跳过 ({source})")
         return False
 
-    title, content = format_multi_content(cu_result, oil_result, slot)
+    title, content = format_multi_content(cu_result, oil_result, slot, intraday=intraday)
     sent = any([
         _push_pushplus(title, content),
         _push_serverchan(title, content),
@@ -113,5 +137,5 @@ def notify_multi_if_signal(
         print("[notify] 未配置推送渠道（PUSHPLUS_TOKEN / SERVERCHAN_KEY / SMTP）")
         return False
 
-    save_state(cu_result.as_of_date, source, slot=slot)
+    save_state(cu_result.as_of_date, source, slot=slot, run_date=run_date)
     return sent

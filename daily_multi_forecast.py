@@ -22,6 +22,8 @@ from fetcher import fetch_cu_daily, fetch_cu_holding_series, fetch_cu_wsr_series
 from forecast_oil_v5 import load_oil_data
 from fundamentals import aggregate_holding, aggregate_wsr
 from lme_ratio import fetch_lme_ratio_series
+from intraday_overlay import apply_bundle
+from intraday_snapshot import fetch_all_snapshots, intraday_adjust_prob_enabled
 from notify_multi import notify_multi_if_signal
 from notify_state import resolve_run_slot
 
@@ -106,22 +108,36 @@ def main() -> int:
         df_oil, wsr_o, hold_o, ratio, api, pmi_o = load_oil_data(start, use_cache=use_cache)
         oil_result = oil_engine.forecast_sc(df_oil, wsr_o, hold_o, ratio, api, pmi_o, cfg=oil_cfg)
 
+        intraday = fetch_all_snapshots()
+        if intraday_adjust_prob_enabled():
+            cu_result, oil_result, intraday = apply_bundle(cu_result, oil_result, intraday)
+            _log("盘中修正 1 日概率: 开启 (INTRADAY_ADJUST_PROB=1)")
+        else:
+            _log("盘中快照: 仅展示，1 日概率保持纯 v5 (INTRADAY_ADJUST_PROB=0)")
+
         _append_history(cu_result, CU_HISTORY, run_time)
         _append_history(oil_result, OIL_HISTORY, run_time)
 
         run_source = load_env("RUN_SOURCE", "local").strip() or "local"
-        pushed = notify_multi_if_signal(
-            cu_result,
-            oil_result,
-            force=args.force_notify,
-            source=run_source,
-            check_dedupe=True,
-            slot=slot,
-        )
-        if pushed:
-            _log(f"已推送微信 slot={slot}")
-        elif load_env("DAILY_NOTIFY", "").lower() in ("1", "true", "yes"):
-            _log("DAILY_NOTIFY=1 但推送失败，请检查 PUSHPLUS_TOKEN")
+        from notify_state import already_pushed, dedupe_run_date
+
+        run_date = dedupe_run_date()
+        if not args.force_notify and already_pushed(cu_result.as_of_date, slot=slot, run_date=run_date):
+            _log(f"去重跳过 slot={slot} run_date={run_date}（今日该时段已推送）")
+        else:
+            pushed = notify_multi_if_signal(
+                cu_result,
+                oil_result,
+                force=args.force_notify,
+                source=run_source,
+                check_dedupe=True,
+                slot=slot,
+                intraday=intraday,
+            )
+            if pushed:
+                _log(f"已推送微信 slot={slot}")
+            elif load_env("DAILY_NOTIFY", "").lower() in ("1", "true", "yes"):
+                _log("DAILY_NOTIFY=1 但推送失败，请检查 PUSHPLUS_TOKEN 或网络")
 
         if not args.quiet:
             print(cu_engine.format_report(cu_result))

@@ -55,9 +55,15 @@ def resolve_run_slot() -> str:
     return "2050"
 
 
-def _state_key(as_of_date: str, slot: str | None = None) -> str:
+def dedupe_run_date() -> str:
+    """去重按「推送运行日 + 时段」，不按数据 as_of_date（跨日同一 as_of 仍要推）。"""
+    return datetime.now().strftime("%Y%m%d")
+
+
+def _state_key(slot: str | None = None, run_date: str | None = None) -> str:
     slot = slot or resolve_run_slot()
-    return f"{as_of_date}_{slot}"
+    run_date = run_date or dedupe_run_date()
+    return f"{run_date}_{slot}"
 
 
 def load_state() -> dict:
@@ -72,32 +78,40 @@ def load_state() -> dict:
     return {}
 
 
-def already_pushed(as_of_date: str, slot: str | None = None) -> bool:
+def already_pushed(as_of_date: str, slot: str | None = None, run_date: str | None = None) -> bool:
     state = load_state()
     slot = slot or resolve_run_slot()
-    key = _state_key(as_of_date, slot)
+    key = _state_key(slot, run_date)
     slots = state.get("slots") or {}
     if key in slots and slots[key].get("pushed"):
         return True
-    # 兼容旧版单日单条记录
+    # 兼容旧版 as_of_date 键（20260911_0840）— 仅在同日运行时视为已推
+    legacy_key = f"{as_of_date}_{slot}"
+    if legacy_key in slots and slots[legacy_key].get("pushed"):
+        if run_date is None or str(as_of_date) == dedupe_run_date():
+            return True
     if not slots and str(state.get("as_of_date")) == str(as_of_date) and bool(state.get("pushed")):
         legacy_slot = state.get("slot") or "0840"
-        return legacy_slot == slot
+        if legacy_slot == slot and str(as_of_date) == dedupe_run_date():
+            return True
     return False
 
 
-def save_state(as_of_date: str, source: str, slot: str | None = None) -> bool:
+def save_state(as_of_date: str, source: str, slot: str | None = None, run_date: str | None = None) -> bool:
     slot = slot or resolve_run_slot()
-    key = _state_key(as_of_date, slot)
+    run_date = run_date or dedupe_run_date()
+    key = _state_key(slot, run_date)
     prev = load_state()
     slots = dict(prev.get("slots") or {})
     slots[key] = {
         "pushed": True,
         "source": source,
+        "as_of_date": str(as_of_date),
         "pushed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     payload = {
         "as_of_date": str(as_of_date),
+        "run_date": run_date,
         "slot": slot,
         "pushed": True,
         "source": source,
