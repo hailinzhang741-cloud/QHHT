@@ -1,6 +1,14 @@
 """Tushare 配置 — 优先从环境变量读取 token。"""
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+BJT = timezone(timedelta(hours=8))
+
+
+def now_bjt() -> datetime:
+    """北京时间（推送去重、时段推断统一用此）。"""
+    return datetime.now(BJT)
 
 # 项目根目录
 ROOT_DIR = Path(__file__).resolve().parent

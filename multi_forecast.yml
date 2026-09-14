@@ -11,8 +11,13 @@ on:
     inputs:
       run_slot:
         description: "时段 0840/1030/1415/2050"
+        required: true
+        default: "2050"
+      force_notify:
+        description: "忽略去重，强制再推一次（手动重测时用）"
         required: false
-        default: "0840"
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -49,12 +54,16 @@ jobs:
 
       - name: Run multi forecast v5
         env:
+          TZ: Asia/Shanghai
           TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
           MODEL_VERSION: "5"
           DAILY_NOTIFY: "1"
           RUN_SOURCE: "cloud"
           RUN_SLOT: ${{ steps.slot.outputs.slot }}
+          FORCE_NOTIFY: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_notify == 'true' && '1' || '0' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: "hailinzhang741-cloud/QHHT"
-        run: python daily_multi_forecast.py --quiet
+        run: |
+          echo "RUN_SLOT=${RUN_SLOT} FORCE_NOTIFY=${FORCE_NOTIFY}"
+          python daily_multi_forecast.py --quiet

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import requests
 
-from config import DATA_DIR, load_env
+from config import DATA_DIR, load_env, now_bjt
 
 STATE_REL_PATH = "data/results/notify_state.json"
 STATE_LOCAL = DATA_DIR / "results" / "notify_state.json"
@@ -43,8 +43,7 @@ def resolve_run_slot() -> str:
     slot = load_env("RUN_SLOT", "").strip()
     if slot:
         return slot.replace(":", "")
-    now = datetime.now()
-    # 北京时间 UTC+8（服务器本地若已是北京时间则直接使用）
+    now = now_bjt()
     hhmm = now.hour * 100 + now.minute
     if hhmm < 930:
         return "0840"
@@ -57,7 +56,7 @@ def resolve_run_slot() -> str:
 
 def dedupe_run_date() -> str:
     """去重按「推送运行日 + 时段」，不按数据 as_of_date（跨日同一 as_of 仍要推）。"""
-    return datetime.now().strftime("%Y%m%d")
+    return now_bjt().strftime("%Y%m%d")
 
 
 def _state_key(slot: str | None = None, run_date: str | None = None) -> str:

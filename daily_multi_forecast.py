@@ -126,37 +126,54 @@ def main() -> int:
         run_source = load_env("RUN_SOURCE", "local").strip() or "local"
         from notify_state import already_pushed, dedupe_run_date
 
+        force_notify = args.force_notify or load_env("FORCE_NOTIFY", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        daily_notify = load_env("DAILY_NOTIFY", "").strip().lower() in ("1", "true", "yes")
         run_date = dedupe_run_date()
-        if not args.force_notify and already_pushed(cu_result.as_of_date, slot=slot, run_date=run_date):
-            _log(f"去重跳过 slot={slot} run_date={run_date}（今日该时段已推送）")
+        push_status = "skipped"
+
+        if not force_notify and already_pushed(cu_result.as_of_date, slot=slot, run_date=run_date):
+            dedupe_key = f"{run_date}_{slot}"
+            _log(f"[推送] 去重跳过 {dedupe_key}（该时段今日已推送；手动重测请加 --force-notify）")
+            push_status = "dedupe"
         else:
             pushed = notify_multi_if_signal(
                 cu_result,
                 oil_result,
-                force=args.force_notify,
+                force=force_notify,
                 source=run_source,
-                check_dedupe=True,
+                check_dedupe=not force_notify,
                 slot=slot,
                 intraday=intraday,
                 cu_session=cu_session,
                 oil_session=oil_session,
             )
             if pushed:
-                _log(f"已推送微信 slot={slot}")
-            elif load_env("DAILY_NOTIFY", "").lower() in ("1", "true", "yes"):
-                _log("DAILY_NOTIFY=1 但推送失败，请检查 PUSHPLUS_TOKEN 或网络")
+                _log(f"[推送] 已发送微信 slot={slot} run_date={run_date}")
+                push_status = "sent"
+            elif daily_notify:
+                _log("[推送] 失败：未发出微信（请检查 PUSHPLUS_TOKEN / 网络）")
+                push_status = "failed"
+            else:
+                _log("[推送] 跳过：无 5 日做多信号且 DAILY_NOTIFY 未开启")
+                push_status = "no_signal"
 
         if not args.quiet:
             print(cu_engine.format_report(cu_result))
             print(oil_engine.format_report(oil_result))
 
         _log(
-            f"完成 slot={slot} refresh={'否' if use_cache else '是'} "
+            f"完成 slot={slot} push={push_status} refresh={'否' if use_cache else '是'} "
             f"铜 as_of={cu_result.as_of_date} close={cu_result.close} "
             f"1d={cu_result.prob_up_1d*100:.1f}% 5d={cu_result.prob_up_5d*100:.1f}% | "
             f"油 as_of={oil_result.as_of_date} close={oil_result.close} "
             f"1d={oil_result.prob_up_1d*100:.1f}% 5d={oil_result.prob_up_5d*100:.1f}%"
         )
+        if push_status == "failed":
+            return 1
         return 0
     except Exception as exc:
         _log(f"失败 slot={slot}: {exc}")
