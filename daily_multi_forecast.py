@@ -24,6 +24,7 @@ from fundamentals import aggregate_holding, aggregate_wsr
 from lme_ratio import fetch_lme_ratio_series
 from intraday_overlay import apply_bundle
 from intraday_snapshot import fetch_all_snapshots, intraday_adjust_prob_enabled
+from session_forecast import build_session_bundle
 from notify_multi import notify_multi_if_signal
 from notify_state import resolve_run_slot
 
@@ -115,6 +116,10 @@ def main() -> int:
         else:
             _log("盘中快照: 仅展示，1 日概率保持纯 v5 (INTRADAY_ADJUST_PROB=0)")
 
+        cu_session, oil_session = build_session_bundle(cu_result, oil_result, slot, intraday)
+        if cu_session:
+            _log(f"分时段预测 slot={slot} mode={cu_session.mode} 铜={cu_session.prob_up*100:.1f}%")
+
         _append_history(cu_result, CU_HISTORY, run_time)
         _append_history(oil_result, OIL_HISTORY, run_time)
 
@@ -133,6 +138,8 @@ def main() -> int:
                 check_dedupe=True,
                 slot=slot,
                 intraday=intraday,
+                cu_session=cu_session,
+                oil_session=oil_session,
             )
             if pushed:
                 _log(f"已推送微信 slot={slot}")
