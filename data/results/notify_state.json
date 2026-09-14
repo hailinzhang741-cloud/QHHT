@@ -3,8 +3,8 @@
   "run_date": "20260914",
   "slot": "2050",
   "pushed": true,
-  "source": "cloud",
-  "pushed_at": "2026-09-14T10:39:44Z",
+  "source": "local",
+  "pushed_at": "2026-09-14T15:17:09Z",
   "slots": {
     "20260911_0840": {
       "pushed": true,
@@ -46,9 +46,9 @@
     },
     "20260914_2050": {
       "pushed": true,
-      "source": "cloud",
+      "source": "local",
       "as_of_date": "20260914",
-      "pushed_at": "2026-09-14T10:39:44Z"
+      "pushed_at": "2026-09-14T15:17:09Z"
     }
   }
 }
