@@ -1,0 +1,60 @@
+# 沪铜+原油联合推送 — 北京时间周一至周五 08:40 / 10:30 / 14:15 / 20:50
+name: QHHT Multi Forecast
+
+on:
+  schedule:
+    - cron: "40 0 * * 1-5"   # 08:40 北京
+    - cron: "30 2 * * 1-5"   # 10:30 北京
+    - cron: "15 6 * * 1-5"   # 14:15 北京
+    - cron: "50 12 * * 1-5"  # 20:50 北京
+  workflow_dispatch:
+    inputs:
+      run_slot:
+        description: "时段 0840/1030/1415/2050"
+        required: false
+        default: "0840"
+
+permissions:
+  contents: write
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Resolve run slot
+        id: slot
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "slot=${{ github.event.inputs.run_slot }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" = "40 0 * * 1-5" ]; then
+            echo "slot=0840" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" = "30 2 * * 1-5" ]; then
+            echo "slot=1030" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" = "15 6 * * 1-5" ]; then
+            echo "slot=1415" >> $GITHUB_OUTPUT
+          else
+            echo "slot=2050" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run multi forecast v5
+        env:
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          MODEL_VERSION: "5"
+          DAILY_NOTIFY: "1"
+          RUN_SOURCE: "cloud"
+          RUN_SLOT: ${{ steps.slot.outputs.slot }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: "hailinzhang741-cloud/QHHT"
+        run: python daily_multi_forecast.py --quiet
