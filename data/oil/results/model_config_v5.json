@@ -1,0 +1,30 @@
+{
+  "version": 5,
+  "long_only": true,
+  "filter": {
+    "1d": {
+      "th_up": 0.62,
+      "th_down": 0.38,
+      "min_agree": 3
+    },
+    "5d": {
+      "th_up": 0.52,
+      "th_down": 0.44,
+      "min_agree": 3
+    }
+  },
+  "quality_filter": {
+    "max_rsi14": 76,
+    "max_price_pos20": 0.92
+  },
+  "calibration_stats": {
+    "1d": {
+      "note": "日度默认观望，不参与阈值优化"
+    },
+    "5d": {
+      "filtered_accuracy": 87.5,
+      "n_signals": 16,
+      "long_hit_rate": 87.5
+    }
+  }
+}
