@@ -1,10 +1,10 @@
 {
   "as_of_date": "20260924",
   "run_date": "20260924",
-  "slot": "1415",
+  "slot": "2050",
   "pushed": true,
-  "source": "cloud",
-  "pushed_at": "2026-09-24T11:53:14Z",
+  "source": "local",
+  "pushed_at": "2026-09-24T12:50:28Z",
   "slots": {
     "20260911_0840": {
       "pushed": true,
@@ -220,9 +220,9 @@
     },
     "20260924_2050": {
       "pushed": true,
-      "source": "cloud",
-      "as_of_date": "20260923",
-      "pushed_at": "2026-09-23T17:30:40Z"
+      "source": "local",
+      "as_of_date": "20260924",
+      "pushed_at": "2026-09-24T12:50:28Z"
     },
     "20260924_0840": {
       "pushed": true,
