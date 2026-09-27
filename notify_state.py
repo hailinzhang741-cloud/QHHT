@@ -7,7 +7,15 @@ from datetime import datetime, timezone
 
 import requests
 
-from config import DATA_DIR, load_env, now_bjt
+from config import BJT, DATA_DIR, load_env, now_bjt
+
+# 各时段有效推送窗口（北京时间）；窗口外写入的状态不阻挡定时推送
+SLOT_WINDOWS_BJT: dict[str, tuple[tuple[int, int], tuple[int, int]]] = {
+    "0840": ((8, 0), (9, 14)),
+    "1030": ((10, 0), (11, 14)),
+    "1415": ((14, 0), (15, 14)),
+    "2050": ((20, 30), (21, 14)),
+}
 
 STATE_REL_PATH = "data/results/notify_state.json"
 STATE_LOCAL = DATA_DIR / "results" / "notify_state.json"
@@ -65,6 +73,44 @@ def _state_key(slot: str | None = None, run_date: str | None = None) -> str:
     return f"{run_date}_{slot}"
 
 
+def _parse_pushed_at(iso: str) -> datetime | None:
+    try:
+        if iso.endswith("Z"):
+            dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        else:
+            dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(BJT)
+    except Exception:
+        return None
+
+
+def _in_slot_window(slot: str, dt_bjt: datetime) -> bool:
+    window = SLOT_WINDOWS_BJT.get(slot)
+    if not window:
+        return True
+    (sh, sm), (eh, em) = window
+    start = dt_bjt.replace(hour=sh, minute=sm, second=0, microsecond=0)
+    end = dt_bjt.replace(hour=eh, minute=em, second=59, microsecond=999999)
+    return start <= dt_bjt <= end
+
+
+def _slot_push_counts(entry: dict, slot: str, run_date: str | None) -> bool:
+    """该时段记录是否算「已在正确时间窗口内推送过」。"""
+    if not entry.get("pushed"):
+        return False
+    pushed_at = entry.get("pushed_at")
+    if not pushed_at:
+        return True
+    dt = _parse_pushed_at(pushed_at)
+    if dt is None:
+        return True
+    if run_date and dt.strftime("%Y%m%d") != run_date:
+        return False
+    return _in_slot_window(slot, dt)
+
+
 def load_state() -> dict:
     remote = fetch_remote_state()
     if remote.get("as_of_date") or remote.get("slots"):
@@ -77,18 +123,46 @@ def load_state() -> dict:
     return {}
 
 
+def _slot_window_end_bjt(slot: str, run_date: str) -> datetime | None:
+    window = SLOT_WINDOWS_BJT.get(slot)
+    if not window:
+        return None
+    (_, _), (eh, em) = window
+    day = datetime.strptime(run_date, "%Y%m%d")
+    return day.replace(hour=eh, minute=em, second=59, tzinfo=BJT)
+
+
+def missed_slots_today(reference: datetime | None = None) -> list[str]:
+    """今日已过窗口结束时间、但窗口内尚未成功推送的时段（用于开机补推）。"""
+    now = reference or now_bjt()
+    if now.weekday() >= 5:
+        return []
+    run_date = now.strftime("%Y%m%d")
+    state = load_state()
+    slots_map = state.get("slots") or {}
+    missed: list[str] = []
+    for slot in ("0840", "1030", "1415", "2050"):
+        end = _slot_window_end_bjt(slot, run_date)
+        if end is None or now <= end:
+            continue
+        key = f"{run_date}_{slot}"
+        entry = slots_map.get(key) or {}
+        if not _slot_push_counts(entry, slot, run_date):
+            missed.append(slot)
+    return missed
+
+
 def already_pushed(as_of_date: str, slot: str | None = None, run_date: str | None = None) -> bool:
     state = load_state()
     slot = slot or resolve_run_slot()
     key = _state_key(slot, run_date)
     slots = state.get("slots") or {}
-    if key in slots and slots[key].get("pushed"):
+    if key in slots and _slot_push_counts(slots[key], slot, run_date):
         return True
-    # 兼容旧版 as_of_date 键（20260911_0840）— 仅在同日运行时视为已推
+    # 兼容旧版 as_of_date 键（20260911_0840）
     legacy_key = f"{as_of_date}_{slot}"
-    if legacy_key in slots and slots[legacy_key].get("pushed"):
-        if run_date is None or str(as_of_date) == dedupe_run_date():
-            return True
+    if legacy_key != key and legacy_key in slots and _slot_push_counts(slots[legacy_key], slot, run_date):
+        return True
     if not slots and str(state.get("as_of_date")) == str(as_of_date) and bool(state.get("pushed")):
         legacy_slot = state.get("slot") or "0840"
         if legacy_slot == slot and str(as_of_date) == dedupe_run_date():
