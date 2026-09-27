@@ -33,9 +33,22 @@ foreach ($s in $slots) {
         -StartWhenAvailable `
         -WakeToRun `
         -MultipleInstances IgnoreNew `
+        -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 2) `
         -ExecutionTimeLimit (New-TimeSpan -Hours 1)
     Register-ScheduledTask -TaskName $subName -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
-    Write-Host "Registered: $subName at $($s.Time) Mon-Fri (WakeToRun, IgnoreNew)"
+    Write-Host "Registered: $subName at $($s.Time) Mon-Fri (WakeToRun, Restart x3)"
 }
 
+# 登录后补推：PC 周末/休眠错过时段时自动补发
+$CatchUpName = "QHHT_MultiForecast_CatchUp"
+$CatchUpPs   = "E:\QHHT\scripts\catch_up_push.ps1"
+Unregister-ScheduledTask -TaskName $CatchUpName -Confirm:$false -ErrorAction SilentlyContinue
+$logonTrigger = New-ScheduledTaskTrigger -AtLogOn
+$catchAction  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$CatchUpPs`"" -WorkingDirectory $WorkDir
+$catchSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+Register-ScheduledTask -TaskName $CatchUpName -Action $catchAction -Trigger $logonTrigger -Settings $catchSettings -Force | Out-Null
+Write-Host "Registered: $CatchUpName at Logon (missed slot catch-up)"
+
 Write-Host "Test: scripts\run_multi_forecast.bat 0840"
+Write-Host "Catch-up: powershell -ExecutionPolicy Bypass -File .\scripts\catch_up_push.ps1"

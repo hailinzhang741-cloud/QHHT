@@ -9,6 +9,7 @@ from pathlib import Path
 import requests
 
 from config import ROOT_DIR, load_env
+from notify_state import already_pushed, save_state
 
 
 def _load_env(key: str) -> str:
@@ -19,7 +20,7 @@ def _push_pushplus_one(token: str, title: str, content: str, to: str = "") -> bo
     payload: dict = {"token": token, "title": title, "content": content, "template": "txt"}
     if to:
         payload["to"] = to
-    r = requests.post("http://www.pushplus.plus/send", json=payload, timeout=15)
+    r = requests.post("https://www.pushplus.plus/send", json=payload, timeout=15)
     data = r.json() if r.ok else {}
     ok = r.ok and data.get("code") == 200
     if ok:
@@ -146,14 +147,24 @@ def daily_notify_enabled() -> bool:
     return load_env("DAILY_NOTIFY", "").strip().lower() in ("1", "true", "yes")
 
 
-def notify_if_signal(result, force: bool = False) -> bool:
+def notify_if_signal(
+    result,
+    force: bool = False,
+    source: str = "local",
+    check_dedupe: bool = True,
+) -> bool:
     """
     默认仅当 5 日信号为「做多」时推送。
     force=True 或 DAILY_NOTIFY=1 时每日推送概率报告。
+    check_dedupe=True 时同一 as_of_date 已推送则跳过（本地/云端互斥）。
     """
-    force = force or daily_notify_enabled()
-    if result.signal_5d != "做多" and not force:
+    daily = daily_notify_enabled()
+    if result.signal_5d != "做多" and not force and not daily:
         print(f"[notify] 5日信号={result.signal_5d}，跳过推送")
+        return False
+
+    if check_dedupe and not force and already_pushed(result.as_of_date):
+        print(f"[notify] {result.as_of_date} 已由其他端推送，跳过 ({source})")
         return False
 
     title, content = format_notify_content(result)
@@ -165,6 +176,9 @@ def notify_if_signal(result, force: bool = False) -> bool:
     ])
     if not sent:
         print("[notify] 未配置推送渠道（PUSHPLUS_TOKEN / SERVERCHAN_KEY / SMTP）")
+        return False
+
+    save_state(result.as_of_date, source)
     return sent
 
 
